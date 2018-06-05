@@ -73,7 +73,16 @@ typedef struct{
    char opcode[OPCODE_MAX_LEN]; //What are they?
 }opcode_format_t;
 
-opcode_format_t *opcode_table[] = {
-    
-};
 
+//This table maps opcode names to an index. The index is
+//used along with various aspects of the specific instruction
+//(like what size the operands are) to provide three unique numbers.
+//These three numbers are used in a 3D array to locate the specific
+//format of a given command.
+#define MNEMONIC_MAX_LEN        16
+typedef struct{
+   char mnemonic[MNEMONIC_MAX_LEN];
+   opcode_format_t *opcode_family; 
+}mnemonic_map_t;
+
+opcode_format_t *ascii_to_opformats(char *ascii);
