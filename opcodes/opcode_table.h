@@ -82,7 +82,8 @@ typedef struct{
 #define MNEMONIC_MAX_LEN        16
 typedef struct{
    char mnemonic[MNEMONIC_MAX_LEN];
-   opcode_format_t *opcode_family; 
+   opcode_format_t ***opcode_family; 
 }mnemonic_map_t;
 
-opcode_format_t *ascii_to_opformats(char *ascii);
+
+opcode_format_t ***ascii_to_opformats(char *ascii);

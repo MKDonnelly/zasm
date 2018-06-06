@@ -20,7 +20,7 @@ typedef struct rex{
    //16 registers to be encoded
    uint8_t r_bit : 1; //extension for ModR/M reg field
    uint8_t x_bit : 1; //extension for SIB index field
-   uint8_t b_bit : 1; //extension for ModR/M r/m field, SIB base, or opcode
+   uint8_t b_bit : 1; //extension for ModR/M r/m field or SIB.base
 }rex_t;
 
 //8 bits long. specifies what the two arguments
@@ -67,12 +67,3 @@ typedef struct sib{
    //Register to use as base
    uint8_t base_bits : 3;
 }sib_t;
-
-//Maps mnemonic opcode names to opcode values
-typedef struct opcode{
-   char opcode_name[16];
-   uint16_t opcode_val;
-   int opcode_bits;
-   int operands;
-}opcode_t;
-
