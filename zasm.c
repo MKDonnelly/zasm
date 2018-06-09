@@ -10,22 +10,29 @@
 
 #define X86_INSTR_MAXLEN	15
 typedef struct buildop{
-   int occupied_bytes;
+   int len; //Increments down the opcode 
+            //array as bytes are added
    char opcode[X86_INSTR_MAXLEN];
 }buildop_t;
 
+//parsed form of input line
+typedef struct{
+   char mnemonic[16];
+   int total_operands;
+   char operands[2][20];
+}input_cmd_t;
 
 //Uses to hold the template for forming
 //an instruction of this kind
 typedef struct{
    //name of instruction
    char name[16];
-   
+  
+   int total_operands;
    //these are the symbolic
    //types of the operator.
    //(i.e. "r32", "i", etc) 
-   char first_op[10];
-   char second_op[10];
+   char operands[2][5];
 
    //Not all instructions need
    //a rex prefix. uses_rex == 1
@@ -40,82 +47,6 @@ typedef struct{
    int uses_modrm;
    char modrm;
 }opcode_format_t;
-
-
-#define MAX_OPCODES	100
-int current_opcode = 0;
-opcode_format_t opcodes[MAX_OPCODES];
-
-#define MAX_LINE_LEN 1024
-//Line format:
-// <mnemonic> <src> <dest> <rex>  <opcode> <modr/m>
-//   add       r64   r/m64  0x48   0x03       0x48
-void read_opcodes(FILE *fd){
-   size_t bytes = MAX_LINE_LEN;
-   char *line = malloc(bytes + 1);
-
-   int lines_left = 1;
-   while( lines_left ){
-      int bytes_read = getdelim(&line, &bytes, '\n', fd);
-
-      if( bytes_read == -1 ){
-         lines_left = 0;
-      }else{
-         int field = 0;
-         char *str = strtok(line, "\t");
-         //First field is name
-         strcpy( opcodes[current_opcode].name, str );
-         str = strtok(NULL, "\t");
-
-         //second field is first op
-         strcpy( opcodes[current_opcode].first_op, str);
-         str = strtok(NULL, "\t");
-
-         //third field is second op
-         strcpy( opcodes[current_opcode].second_op, str );
-         str = strtok(NULL, "\t");
-
-         //fourth field is rex
-         if( strcmp( "none", str ) == 0 ){
-            opcodes[current_opcode].uses_rex = 0;
-         }else{
-            opcodes[current_opcode].uses_rex = 1;
-            opcodes[current_opcode].rex = strtol(str, NULL, 16);
-         }
-         str = strtok(NULL, "\t");
-   
-         //fifth field is opcode
-         opcodes[current_opcode].opcode_len = 1;
-         opcodes[current_opcode].opcode[0] = strtol(str, NULL, 16);
-         str = strtok(NULL, "\t");
-   
-         //sixth field is modrm
-         if( strcmp( "none", str ) == 0 ){
-            opcodes[current_opcode].uses_modrm = 0;
-         }else if( str[0] == '+' && str[1] == 'r' ){
-            //Uses for when the last 3 bits of the opcode
-            //specifies the register, without the modrm
-            opcodes[current_opcode].uses_modrm = 2;
-         }else{
-            opcodes[current_opcode].uses_modrm = 1;
-            opcodes[current_opcode].modrm = strtol(str, NULL, 16);
-         }
-
-         current_opcode++;
-      }
-   }
-}
-
-opcode_format_t *search_opcode(char *name, char *first, char *second){
-   for(int i = 0; i < current_opcode; i++){
-      if( strcmp( opcodes[i].name, name ) == 0 &&
-          strstr( opcodes[i].first_op, first ) != NULL &&
-          strstr( opcodes[i].second_op, second) != NULL ){
-         return &opcodes[i];
-      }
-   }
-   return NULL;
-}
 
 #define TYPE_REG64	0
 #define TYPE_REG32	1
@@ -178,63 +109,153 @@ char reg_to_num(char *reg){
       return 0b0111;
 }
 
-//Encodes the rex prefix, if needed.
-void encode_rex(buildop_t *buildop, char *line[3]){
-   opcode_format_t *fmt = search_opcode( line[0], symbol_to_type(line[1]), 
-                                         symbol_to_type(line[2]));
-   if( fmt != 0 && fmt->uses_rex ){
-      buildop->opcode[buildop->occupied_bytes] = fmt->rex;
 
-      //Add the extra bit extension
-      //destination
-      int op1_extension = (reg_to_num( line[1] ) & 0b1000) >> 3;
-      //source
-      int op2_extension = (reg_to_num( line[2] ) & 0b1000) >> 3;
-      buildop->opcode[buildop->occupied_bytes] |= (op2_extension << 3) | op1_extension;
-      buildop->occupied_bytes++;
+#define MAX_OPCODES	100
+int current_opcode = 0;
+opcode_format_t opcodes[MAX_OPCODES];
+
+#define MAX_LINE_LEN 1024
+//Line format:
+// <mnemonic> <src> <dest> <rex>  <opcode> <modr/m>
+//   add       r64   r/m64  0x48   0x03       0x48
+void read_opcodes(FILE *fd){
+   size_t bytes = MAX_LINE_LEN;
+   char *line = malloc(bytes + 1);
+
+   int lines_left = 1;
+   while( lines_left ){
+      int bytes_read = getdelim(&line, &bytes, '\n', fd);
+
+      if( bytes_read == -1 ){
+         lines_left = 0;
+      }else{
+         opcodes[current_opcode].total_operands = 0;
+ 
+         char *str = strtok(line, "\t");
+         //First field is name
+         strcpy( opcodes[current_opcode].name, str );
+         str = strtok(NULL, "\t");
+
+         //second field is first op
+         if( strcmp( str, "none" ) != 0 ){
+            int op_pos = opcodes[current_opcode].total_operands;
+            strcpy( opcodes[current_opcode].operands[op_pos], str);
+            opcodes[current_opcode].total_operands++;
+         }
+         str = strtok(NULL, "\t");
+
+         //third field is second op (if present) 
+         if( strcmp( str, "none" ) != 0 ){
+            int op_pos = opcodes[current_opcode].total_operands;
+            strcpy( opcodes[current_opcode].operands[op_pos], str );
+            opcodes[current_opcode].total_operands++; 
+         }
+         str = strtok(NULL, "\t");
+
+         //fourth field is rex
+         int r = strcmp( "none", str );
+         if( r == 0 ){
+            opcodes[current_opcode].uses_rex = 0;
+         }else{
+            opcodes[current_opcode].uses_rex = 1;
+            opcodes[current_opcode].rex = strtol(str, NULL, 16);
+         }
+         str = strtok(NULL, "\t");
+   
+         //fifth field is opcode
+         opcodes[current_opcode].opcode_len = 1;
+         opcodes[current_opcode].opcode[0] = strtol(str, NULL, 16);
+         str = strtok(NULL, "\t");
+   
+         //sixth field is modrm. TODO strip off that '\n'
+         if( strcmp( "none\n", str ) == 0 ){
+            opcodes[current_opcode].uses_modrm = 0;
+         }else if( str[0] == '+' && str[1] == 'r' ){
+            //Uses for when the last 3 bits of the opcode
+            //specifies the register, without the modrm
+            opcodes[current_opcode].uses_modrm = 2;
+         }else{
+            opcodes[current_opcode].uses_modrm = 1;
+            opcodes[current_opcode].modrm = strtol(str, NULL, 16);
+         }
+
+         current_opcode++;
+      }
    }
 }
 
-void encode_op(buildop_t *buildop, char *line[3]){
-   opcode_format_t *fmt = search_opcode( line[0], symbol_to_type(line[1]),
-                                         symbol_to_type(line[2]));
-   buildop->opcode[buildop->occupied_bytes] = fmt->opcode[0];
+opcode_format_t *search_opcode(input_cmd_t *line){
+   for(int i = 0; i < current_opcode; i++){
+      int result = strcmp( opcodes[i].name, line->mnemonic );
+      if( result == 0 ){
+         int valid = 1;
+         for(int j = 0; j < line->total_operands; j++){
+            int r = strcmp( opcodes[i].operands[j], symbol_to_type(line->operands[j]));
+            if( r != 0 )
+               valid = 0;
+         }
+         if( valid )
+            return &opcodes[i];
+      }
+   }
+   return NULL;
+}
+
+
+//Encodes the rex prefix, if needed.
+void encode_rex(buildop_t *buildop, input_cmd_t *line, 
+                opcode_format_t *fmt){
+   if( fmt != 0 && fmt->uses_rex ){
+      buildop->opcode[buildop->len] = fmt->rex;
+
+      //Add the two extra bits that extend the rex prefix
+      //destination
+      int op1_extension = (reg_to_num( line->operands[0] ) & 0b1000) >> 3;
+      //source
+      int op2_extension = (reg_to_num( line->operands[1] ) & 0b1000) >> 3;
+      buildop->opcode[buildop->len] |= 
+                                     (op2_extension << 3) | op1_extension;
+      buildop->len++;
+   }
+}
+
+void encode_op(buildop_t *buildop, input_cmd_t *line, 
+               opcode_format_t *fmt){
+   buildop->opcode[buildop->len] = fmt->opcode[0];
    //Does not use modrm, but uses the last 3 bits of the opcode
    if( fmt->uses_modrm == 2 ){
-      buildop->opcode[buildop->occupied_bytes] |= reg_to_num( line[1] );
+      buildop->opcode[buildop->len] |= reg_to_num( line->operands[0] );
    }
-   buildop->occupied_bytes++;
+   buildop->len++;
 }
 
-void encode_modrm(buildop_t *buildop, char *line[3]){
-   opcode_format_t *fmt = search_opcode( line[0], symbol_to_type(line[1]),
-                                         symbol_to_type(line[2]));
+void encode_modrm(buildop_t *buildop, input_cmd_t *line, 
+                  opcode_format_t *fmt){
    if( fmt->uses_modrm == 1 ){
       char modrm = fmt->modrm;
       //destination
-      int op1 = reg_to_num(line[1]) & 0b111;
+      int op1 = reg_to_num(line->operands[0]) & 0b111;
       //source
-      int op2 = reg_to_num(line[2]) & 0b111;
+      int op2 = reg_to_num(line->operands[1]) & 0b111;
       modrm |= (op2 << 3) | op1;
-      buildop->opcode[buildop->occupied_bytes++] = modrm;
+      buildop->opcode[buildop->len++] = modrm;
    }
 }
 
-void encode_immediate(buildop_t *buildop, char *line[3]){
-   char *type = symbol_to_type(line[2]);
+void encode_immediate(buildop_t *buildop, input_cmd_t *line){
+   //Immediate MUST be second operand (i.e. we can't mov to an imm)
+   char *type = symbol_to_type(line->operands[1]);
    if( strcmp( "i", type ) == 0 ){
-        char *type = symbol_to_type(line[1]);
+      char *reg_type = symbol_to_type(line->operands[0]);
       //TODO why is the normal strcmp failing here?
-      if( type[0] == 'r' && type[1] == '3' && type[2] == '2' ){
-         uint32_t imm = atoi( line[2] );
-         uint32_t *ptr = &buildop->opcode[buildop->occupied_bytes];
-         *ptr = imm;
-         buildop->occupied_bytes += 4;
-     }else if( type[0] == 'r' && type[1] == '6' && type[2] == '4'){
-         uint64_t imm = atol( line[2] );
-         uint64_t *ptr = &buildop->opcode[buildop->occupied_bytes];
-         *ptr = imm;
-         buildop->occupied_bytes += 8;
+      if( reg_type[0] == 'r' && reg_type[1] == '3' && reg_type[2] == '2' ){
+         uint32_t *ptr = &buildop->opcode[buildop->len];
+         *ptr = atoi(line->operands[1]);
+         buildop->len += 4;
+     }else if( reg_type[0] == 'r' && reg_type[1] == '6' && reg_type[2] == '4'){
+         uint64_t *ptr = &buildop->opcode[buildop->len];
+         *ptr = atol(line->operands[1]);
+         buildop->len += 8;
      }
    }
 }
@@ -243,15 +264,26 @@ void main(){
    FILE *ops = fopen("./opcode_table", "r");
    read_opcodes(ops);
 
-   char *line[] = {"mov", "rax", "1111111111111111"};
-   buildop_t op;
-   op.occupied_bytes = 0;
-   encode_rex(&op, line);
-   encode_op(&op, line);
-   encode_modrm(&op, line);
-   encode_immediate(&op, line);
+   input_cmd_t line;
+   strcpy(line.mnemonic, "nop");
+   strcpy(line.operands[0], "");
+   strcpy(line.operands[1], "");
+   line.total_operands = 0;
 
-   for(int i = 0; i < op.occupied_bytes; i++){
+   buildop_t op;
+   op.len = 0;
+   opcode_format_t *fmt = search_opcode( &line );
+   if( fmt == NULL ){
+      printf("Opcode not found!\n");
+      exit(1);
+   }
+
+   encode_rex(&op, &line, fmt);
+   encode_op(&op, &line, fmt);
+   encode_modrm(&op, &line, fmt);
+   encode_immediate(&op, &line);
+
+   for(int i = 0; i < op.len; i++){
       printf("%.2x ", op.opcode[i] & 0xff);
    }
 }

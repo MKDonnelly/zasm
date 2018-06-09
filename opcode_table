@@ -1,6 +1,7 @@
+mov	r64	r64	48	8B	C0
 mov	r32	i	none	B8	+r
 add	r64	r64,m64	48	3	C0
 add	r32	r32	none	1	C0
-mov	r64	r64	48	8B	C0
 mov	r32	r32	none	8B	C0
 mov	r64	i	48	B8	+r
+nop	none	none	none	90	none
