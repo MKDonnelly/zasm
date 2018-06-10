@@ -41,9 +41,8 @@ typedef struct{
    char rex;
 
    int opcode_len;
-   char opcode[1];
+   char opcode[3];
 
-   //This can be 2 to 
    int uses_modrm;
    char modrm;
 }opcode_format_t;
@@ -131,10 +130,10 @@ void read_opcodes(FILE *fd){
       }else{
          opcodes[current_opcode].total_operands = 0;
  
-         char *str = strtok(line, "\t");
+         char *str = strsep(&line, "\t");
          //First field is name
          strcpy( opcodes[current_opcode].name, str );
-         str = strtok(NULL, "\t");
+         str = strsep(&line, "\t");
 
          //second field is first op
          if( strcmp( str, "none" ) != 0 ){
@@ -142,7 +141,7 @@ void read_opcodes(FILE *fd){
             strcpy( opcodes[current_opcode].operands[op_pos], str);
             opcodes[current_opcode].total_operands++;
          }
-         str = strtok(NULL, "\t");
+         str = strsep(&line, "\t");
 
          //third field is second op (if present) 
          if( strcmp( str, "none" ) != 0 ){
@@ -150,7 +149,7 @@ void read_opcodes(FILE *fd){
             strcpy( opcodes[current_opcode].operands[op_pos], str );
             opcodes[current_opcode].total_operands++; 
          }
-         str = strtok(NULL, "\t");
+         str = strsep(&line, "\t");
 
          //fourth field is rex
          int r = strcmp( "none", str );
@@ -160,12 +159,17 @@ void read_opcodes(FILE *fd){
             opcodes[current_opcode].uses_rex = 1;
             opcodes[current_opcode].rex = strtol(str, NULL, 16);
          }
-         str = strtok(NULL, "\t");
+         str = strsep(&line, "\t");
    
          //fifth field is opcode
-         opcodes[current_opcode].opcode_len = 1;
-         opcodes[current_opcode].opcode[0] = strtol(str, NULL, 16);
-         str = strtok(NULL, "\t");
+         char *op = strsep(&str, ",");
+         while( op != NULL ){
+            int pos = opcodes[current_opcode].opcode_len;
+            opcodes[current_opcode].opcode[pos] = strtol(op, NULL, 16);
+            opcodes[current_opcode].opcode_len++;
+            op = strsep(&str, ",");
+         }
+         str = strsep(&line, "\t");
    
          //sixth field is modrm. TODO strip off that '\n'
          if( strcmp( "none\n", str ) == 0 ){
@@ -221,12 +225,16 @@ void encode_rex(buildop_t *buildop, input_cmd_t *line,
 
 void encode_op(buildop_t *buildop, input_cmd_t *line, 
                opcode_format_t *fmt){
-   buildop->opcode[buildop->len] = fmt->opcode[0];
+   int first_byte = buildop->len;
+   for(int i = 0; i < fmt->opcode_len; i++){
+      buildop->opcode[buildop->len] = fmt->opcode[i];
+      buildop->len++;
+   }
+
    //Does not use modrm, but uses the last 3 bits of the opcode
    if( fmt->uses_modrm == 2 ){
-      buildop->opcode[buildop->len] |= reg_to_num( line->operands[0] );
+      buildop->opcode[first_byte] |= reg_to_num( line->operands[0] );
    }
-   buildop->len++;
 }
 
 void encode_modrm(buildop_t *buildop, input_cmd_t *line, 
@@ -242,7 +250,11 @@ void encode_modrm(buildop_t *buildop, input_cmd_t *line,
    }
 }
 
-void encode_immediate(buildop_t *buildop, input_cmd_t *line){
+void encode_immediate(buildop_t *buildop, input_cmd_t *line, opcode_format_t *fmt){
+   //temporarily, I assume if an opcode as an imm, it must have 
+   //2 operands and the imm is the second
+   if( line->total_operands != 2 )
+      return;
    //Immediate MUST be second operand (i.e. we can't mov to an imm)
    char *type = symbol_to_type(line->operands[1]);
    if( strcmp( "i", type ) == 0 ){
@@ -260,30 +272,72 @@ void encode_immediate(buildop_t *buildop, input_cmd_t *line){
    }
 }
 
+buildop_t *create_opcode(input_cmd_t *line){
+  
+   opcode_format_t *fmt = search_opcode(line);
+   if( fmt != NULL ){
+      buildop_t *new_op = malloc(sizeof(buildop_t));
+      new_op->len = 0;
+      encode_rex( new_op, line, fmt );
+      encode_op( new_op, line, fmt );
+      encode_modrm( new_op, line, fmt ); 
+      encode_immediate( new_op, line, fmt );
+      return new_op;
+   }else{
+      return NULL;
+   }
+}
+
+int process_file(FILE *input_file, char *output){
+   char *line = malloc(1024);
+   size_t max = 1024;
+   input_cmd_t input;
+   int offset = 0;
+   int result = getline( &line, &max, input_file );
+   line[result-1] = 0; //remove trailing newline
+   while( result != -1 ){
+      char *mnemonic = strsep( &line, " ");
+      strcpy( input.mnemonic, mnemonic );
+      input.total_operands = 0;
+ 
+      char *first_op = strsep( &line, ",");
+      if( first_op != NULL ){
+         strcpy(input.operands[0], first_op);
+         input.total_operands = 1;
+      }
+
+      char *second_op = strsep( &line, ",");
+      if( second_op != NULL ){
+         second_op++; //get rid of space
+         strcpy( input.operands[1], second_op);
+         input.total_operands = 2;
+      }
+
+      //generate the actual assembly codes
+      buildop_t *op = create_opcode(&input);
+      if( op == NULL ){
+         printf("Opcode not found!\n");
+         return;
+      }
+      for(int i = 0; i < op->len; i++, offset++){
+         output[offset] = op->opcode[i];
+      }
+      result = getline( &line, &max, input_file );
+      line[result-1] = 0; //remove trailing newline
+   }
+   return offset;
+}
+
 void main(){
    FILE *ops = fopen("./opcode_table", "r");
    read_opcodes(ops);
 
-   input_cmd_t line;
-   strcpy(line.mnemonic, "nop");
-   strcpy(line.operands[0], "");
-   strcpy(line.operands[1], "");
-   line.total_operands = 0;
-
-   buildop_t op;
-   op.len = 0;
-   opcode_format_t *fmt = search_opcode( &line );
-   if( fmt == NULL ){
-      printf("Opcode not found!\n");
-      exit(1);
-   }
-
-   encode_rex(&op, &line, fmt);
-   encode_op(&op, &line, fmt);
-   encode_modrm(&op, &line, fmt);
-   encode_immediate(&op, &line);
-
-   for(int i = 0; i < op.len; i++){
-      printf("%.2x ", op.opcode[i] & 0xff);
+   FILE *test = fopen("./test.asm", "r");
+   char *output = malloc(1024);
+   int q = process_file(test, output);
+   
+   printf("%d\n", q);
+   for(int i = 0; i < q; i++){
+      printf("%.2x ", output[i] & 0xff);
    }
 }
