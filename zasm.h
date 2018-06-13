@@ -3,14 +3,6 @@
 #include <stdint.h>
 
 //For opcode
-/*
-   //d = 0 if adding from register TO memory
-   //d = 1 if adding from memory TO register
-   //s = 0 for 8 bit operands
-   //s = 1 for 16 of 32 bit operands (depending on setup GDT)
-   uint8_t s_bit : 1;
-   uint8_t d_bit : 1;*/
-
 typedef struct rex{
    uint8_t fixed_bit_pattern : 4; //Always 0100
    uint8_t w_bit : 1; //0 = operand size determined by CS.D
@@ -48,8 +40,6 @@ typedef struct modrm{
 }modrm_t;
 
 //SIB byte, used when doing stuff like [eax+4*rbx]
-//Not every instruction requires this, and I may not
-//support it initially.
 //Format: [(base) + (index)*(scale)]
 //index can be a scalar value of 1,2,4, or 8
 //(base) and (scale) must be registers

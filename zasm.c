@@ -17,7 +17,7 @@ typedef struct buildop{
 
 //parsed form of input line
 typedef struct{
-   char mnemonic[16];
+   char mnemonic[20];
    int total_operands;
    char operands[2][20];
 }input_cmd_t;
@@ -26,7 +26,7 @@ typedef struct{
 //an instruction of this kind
 typedef struct{
    //name of instruction
-   char name[16];
+   char name[20];
   
    int total_operands;
    //these are the symbolic
@@ -47,51 +47,6 @@ typedef struct{
    char modrm;
 }opcode_format_t;
 
-#define TYPE_REG64	0
-#define TYPE_REG32	1
-#define TYPE_IMM	2
-#define TYPE_MEM	3
-int type_of(char *str){
-   if( strcmp( str, "rax" ) == 0 ||
-       strcmp( str, "rbx" ) == 0 ||
-       strcmp( str, "rcx" ) == 0 ||
-       strcmp( str, "rdx" ) == 0 ||
-       strcmp( str, "rdi" ) == 0 ||
-       strcmp( str, "rsi" ) == 0 )
-      return TYPE_REG64;
-
-   if( strcmp( str, "eax" ) == 0 ||
-       strcmp( str, "ebx" ) == 0 ||
-       strcmp( str, "ecx" ) == 0 ||
-       strcmp( str, "edx" ) == 0 ||
-       strcmp( str, "edi" ) == 0 ||
-       strcmp( str, "esi" ) == 0 )
-      return TYPE_REG32;
-
-   int is_number = 1;
-   int i = 0;
-   while( str[i] != 0 ){
-      if( ! isdigit(str[i]) )
-         is_number = 0;
-      i++;
-   }
-
-   if( is_number )
-      return TYPE_IMM;
-
-   //If it isn't any of the above, it must be a memory
-   //access (or a syntax error)
-   return TYPE_MEM;
-}
-
-char *symbol_to_type(char *op){
-   if( type_of(op) == TYPE_REG64 )
-      return "r64";
-   if( type_of(op) == TYPE_REG32 )
-      return "r32";
-   if( type_of(op) == TYPE_IMM )
-      return "i";
-}
 
 char reg_to_num(char *reg){
    if( strcmp(reg, "rax") == 0 || strcmp(reg, "eax") == 0)
@@ -116,7 +71,7 @@ opcode_format_t opcodes[MAX_OPCODES];
 #define MAX_LINE_LEN 1024
 //Line format:
 // <mnemonic> <src> <dest> <rex>  <opcode> <modr/m>
-//   add       r64   r/m64  0x48   0x03       0x48
+//   addrmq    r64   r/m64  0x48   0x03       0x48
 void read_opcodes(FILE *fd){
    size_t bytes = MAX_LINE_LEN;
    char *line = malloc(bytes + 1);
@@ -188,19 +143,11 @@ void read_opcodes(FILE *fd){
    }
 }
 
+//Search for the format of an opcode given its name
 opcode_format_t *search_opcode(input_cmd_t *line){
    for(int i = 0; i < current_opcode; i++){
-      int result = strcmp( opcodes[i].name, line->mnemonic );
-      if( result == 0 ){
-         int valid = 1;
-         for(int j = 0; j < line->total_operands; j++){
-            int r = strcmp( opcodes[i].operands[j], symbol_to_type(line->operands[j]));
-            if( r != 0 )
-               valid = 0;
-         }
-         if( valid )
+      if( strcmp( opcodes[i].name, line->mnemonic ) == 0 )
             return &opcodes[i];
-      }
    }
    return NULL;
 }
@@ -223,7 +170,7 @@ void encode_rex(buildop_t *buildop, input_cmd_t *line,
    }
 }
 
-void encode_op(buildop_t *buildop, input_cmd_t *line, 
+void encode_op(buildop_t *buildop, input_cmd_t *line,
                opcode_format_t *fmt){
    int first_byte = buildop->len;
    for(int i = 0; i < fmt->opcode_len; i++){
@@ -256,15 +203,12 @@ void encode_immediate(buildop_t *buildop, input_cmd_t *line, opcode_format_t *fm
    if( line->total_operands != 2 )
       return;
    //Immediate MUST be second operand (i.e. we can't mov to an imm)
-   char *type = symbol_to_type(line->operands[1]);
-   if( strcmp( "i", type ) == 0 ){
-      char *reg_type = symbol_to_type(line->operands[0]);
-      //TODO why is the normal strcmp failing here?
-      if( reg_type[0] == 'r' && reg_type[1] == '3' && reg_type[2] == '2' ){
+   if( strcmp( "i", fmt->operands[1] ) == 0 ){
+      if( strcmp("r32", fmt->operands[0]) == 0 ){
          uint32_t *ptr = &buildop->opcode[buildop->len];
          *ptr = atoi(line->operands[1]);
          buildop->len += 4;
-     }else if( reg_type[0] == 'r' && reg_type[1] == '6' && reg_type[2] == '4'){
+     }else if( strcmp("r64", fmt->operands[0]) == 0){
          uint64_t *ptr = &buildop->opcode[buildop->len];
          *ptr = atol(line->operands[1]);
          buildop->len += 8;
@@ -283,61 +227,75 @@ buildop_t *create_opcode(input_cmd_t *line){
       encode_modrm( new_op, line, fmt ); 
       encode_immediate( new_op, line, fmt );
       return new_op;
-   }else{
-      return NULL;
    }
+   return NULL;
+}
+
+
+//Given a string (i.e. "mov eax, ebx") encode it.
+buildop_t *encode_line(char *line){
+   input_cmd_t input;
+
+   char *mnemonic = strsep(&line, " ");
+   strcpy( input.mnemonic, mnemonic );
+   input.total_operands = 0;
+ 
+   char *first_op = strsep( &line, ",");
+   if( first_op != NULL ){
+      strcpy(input.operands[0], first_op);
+      input.total_operands = 1;
+   }
+
+   char *second_op = strsep( &line, ",");
+   if( second_op != NULL ){
+      second_op++; //get rid of space
+      strcpy( input.operands[1], second_op);
+      input.total_operands = 2;
+   }
+
+   //generate the actual assembly codes
+   buildop_t *op = create_opcode(&input);
+   if( op == NULL ){
+      printf("Opcode not found!\n");
+      return -1;
+   }
+   return op;
 }
 
 int process_file(FILE *input_file, char *output){
    char *line = malloc(1024);
    size_t max = 1024;
    input_cmd_t input;
-   int offset = 0;
+   int length = 0;
    int result = getline( &line, &max, input_file );
    line[result-1] = 0; //remove trailing newline
    while( result != -1 ){
-      char *mnemonic = strsep( &line, " ");
-      strcpy( input.mnemonic, mnemonic );
-      input.total_operands = 0;
- 
-      char *first_op = strsep( &line, ",");
-      if( first_op != NULL ){
-         strcpy(input.operands[0], first_op);
-         input.total_operands = 1;
-      }
-
-      char *second_op = strsep( &line, ",");
-      if( second_op != NULL ){
-         second_op++; //get rid of space
-         strcpy( input.operands[1], second_op);
-         input.total_operands = 2;
-      }
-
-      //generate the actual assembly codes
-      buildop_t *op = create_opcode(&input);
-      if( op == NULL ){
-         printf("Opcode not found!\n");
-         return;
-      }
-      for(int i = 0; i < op->len; i++, offset++){
-         output[offset] = op->opcode[i];
+      buildop_t *op = encode_line(line);
+      for(int i = 0; i < op->len; i++, length++){
+         output[length] = op->opcode[i];
       }
       result = getline( &line, &max, input_file );
       line[result-1] = 0; //remove trailing newline
    }
-   return offset;
+   return length;
 }
 
-void main(){
+void main(int argc, char **argv){
    FILE *ops = fopen("./opcode_table", "r");
    read_opcodes(ops);
 
-   FILE *test = fopen("./test.asm", "r");
-   char *output = malloc(1024);
-   int q = process_file(test, output);
+   if( argc == 1 ){
+      FILE *test = fopen("./test.asm", "r");
+      char *output_asm = malloc(1024);
+      int byte_length = process_file(test, output_asm);
    
-   printf("%d\n", q);
-   for(int i = 0; i < q; i++){
-      printf("%.2x ", output[i] & 0xff);
+      for(int i = 0; i < byte_length; i++){
+         printf("%.2x ", output_asm[i] & 0xff);
+      }
+   }else{ 
+      buildop_t *op = encode_line(argv[1]);      
+      for(int i = 0; i < op->len; i++){
+         printf("%.2x ", op->opcode[i] & 0xff);
+      }
    }
 }

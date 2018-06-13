@@ -1,10 +1,9 @@
-mov	r64	r64	48	8B	C0
-mov	r32	i	none	B8	+r
-add	r64	r64,m64	48	3	C0
-add	r32	r32	none	1	C0
-mov	r32	r32	none	8B	C0
-mov	r64	i	48	B8	+r
+movrrq	r64	r64	48	8B	C0
+movril	r32	i	none	B8	+r
+addrrl	r32	r32	none	1	C0
+movrrl	r32	r32	none	8B	C0
+movriq	r64	i	48	B8	+r
 nop	none	none	none	90	none
-and	r64	r64	48	21	C0
-xor	r64	r64	48	31	C0
+andrrq	r64	r64	48	21	C0
+xorrrq	r64	r64	48	31	C0
 syscall	none	none	none	0F,05	none
