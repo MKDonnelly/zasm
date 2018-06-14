@@ -1,4 +1,0 @@
-EVERY ENTRY MUST BE OCCUPIED. ALL DIGITS ARE ASSUMED TO BE HEX!
-If the value is not used, "none" is used
-<mnemonic> <source> <dest> <rex> <opcode> <modr/m>
-add	r64	r/m64	0x48	0x03	0x48
