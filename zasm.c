@@ -2,31 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include "zasm.h"
+#include "common.h"
 #include "opcode_table.h"
-
-//The largest x86 instruction is 15 bytes long
-#define MCODE_MAXLEN	15
-typedef struct mcode{
-   int len; //Increments down the bytes
-            //array as bytes are added
-   char bytes[MCODE_MAXLEN];
-}mcode_t;
-
-//This holds the parsed input line.
-//For example, "movrrq rax, rbx" turns into
-// .mnemonic = "movrrq",
-// .total_operands = 2;
-// .operands[0] = "rax"
-// .operands[1] = "rbx"
-#define MNEMONIC_MAX_LEN	20
-#define MAX_OPERANDS		2
-#define OPERANDS_MAX_LEN	20
-typedef struct{
-   char mnemonic[MNEMONIC_MAX_LEN];
-   int total_operands;
-   char operands[MAX_OPERANDS][OPERANDS_MAX_LEN];
-}asm_input_t;
-
 
 //Given the name of a register (i.e. "rax") convert it
 //into its number. The number is used when referencing the
@@ -56,6 +34,70 @@ mcode_fmt_t *search_format(char *mnemonic){
    return NULL;
 }
 
+//Determine the type of memory reference being made
+//This is primarily done by finding the number after
+//the closing brace, if it exists. This differentiates
+//the following three cases.
+// 1 - [<reg>]
+// 2 - [<reg>]+disp8
+// 3 - [<reg>]+disp32
+int memref_type(char *memref){
+   if( strstr(memref, "+") == NULL ){
+      //No plus, so it must be 1
+      return 0b00; //Mod == 00
+   }else{
+      char *number_start = strstr(memref, "+");
+      number_start++; //skip over "+"
+      int number = atoi(number_start);
+      if( number < 255 ){
+         //number can be represented as disp8
+         return 0b01;
+      }else{
+         return 0b10;
+      }
+   }
+}
+
+
+void encode_memref(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
+   //NOTE: I presume all instructions have the memory as the second 
+   //operator.
+   char *memref;
+   char modrm = fmt->modrm;
+   
+   if( fmt->operands[1][0] == 'm'){
+      memref = line->operands[1];
+   }else{
+       return;
+   }
+
+   printf("Memory reference: %s\n", memref);
+
+   int mod = memref_type(memref);
+   char *reg = strip_chars(memref, "[]");
+ 
+   if( mod == 0 ){
+      modrm |= mod << 6 | ((reg_to_num(line->operands[0]) & 0b111) << 3) 
+               | (reg_to_num(reg) & 0b111);
+   }else if( mod == 0b01 ){
+
+   }else if( mod == 0b10 ){
+
+   }
+
+   output->bytes[output->len] = modrm;
+   output->len++;
+}
+
+void encode_prefixes(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
+   if( DEFAULT_OPSIZE16 && 
+     (strcmp(fmt->operands[0], "m32") == 0 || 
+      strcmp(fmt->operands[1], "m32") == 0 )){
+      //Legacy prefix needed
+      output->bytes[output->len] = 0x67;
+      output->len++;
+   }
+}
 
 //Encodes the rex prefix, if needed.
 void encode_rex(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
@@ -90,7 +132,10 @@ void encode_op(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
 }
 
 void encode_modrm(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
-   if( fmt->modrm >= 0 ){
+   //Catch memory references; they are pretty complicated
+   if( fmt->operands[0][0] == 'm' || fmt->operands[1][0] == 'm'){
+      encode_memref(output, line, fmt);
+   }else if( fmt->modrm >= 0 ){
       //reg_to_num returns a 4 bit value (the upper bit is used by
       //the rex prefix, if required). we only need the lower 3.
       //destination
@@ -100,6 +145,9 @@ void encode_modrm(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
       output->bytes[output->len++] = ((char)fmt->modrm) | (op2 << 3) | op1;
    }
 }
+
+
+
 
 void encode_immediate(mcode_t *output, asm_input_t *line, 
                       mcode_fmt_t *fmt){
@@ -130,6 +178,7 @@ mcode_t *assemble_line(char *line){
  
    //first operand (destination)
    char *first_op = strsep( &line, ",");
+   strip_chars(first_op, " \t");
    if( first_op != NULL ){
       strcpy(input.operands[0], first_op);
       input.total_operands = 1;
@@ -137,8 +186,8 @@ mcode_t *assemble_line(char *line){
 
    //second operand (source)
    char *second_op = strsep( &line, ",");
+   strip_chars(second_op, " \t");
    if( second_op != NULL ){
-      second_op++; //get rid of space. TODO get rid of this
       strcpy( input.operands[1], second_op);
       input.total_operands = 2;
    }
@@ -152,6 +201,7 @@ mcode_t *assemble_line(char *line){
    mcode_t *new_mcode = malloc(sizeof(mcode_t));
    if( fmt != NULL ){
       new_mcode->len = 0;
+      encode_prefixes(new_mcode, &input, fmt);
       encode_rex( new_mcode, &input, fmt );
       encode_op( new_mcode, &input, fmt );
       encode_modrm( new_mcode, &input, fmt ); 
@@ -191,6 +241,7 @@ int process_file(FILE *input_file, char *output_mcode){
    //Return number of bytes placed in output_mcode
    return length;
 }
+
 
 void main(int argc, char **argv){
    //FILE *ops = fopen("./opcode_table", "r");

@@ -9,7 +9,7 @@ typedef struct{
    //holds the SYMBOLIC TYPES of operands
    //i.e. rax is "r64", 100 is "i"
    //This can be iterated through, until
-   //operands[i] == 0, at which point, there
+   //operands[i] == -1, at which point, there
    //are not more operands.
    char operands[3][7];
 
@@ -28,44 +28,45 @@ typedef struct{
    int modrm;
 }mcode_fmt_t;
 
-#define MAKE_OPCODE(_name, _operands, _rex, _opcode, _modrm)	\
-{.name = _name, .operands = {_operands}, .rex = _rex, 		\
-   .opcode = {_opcode}, .modrm = _modrm}
+#define MAKE_OPCODE(_name, _operands,  _rex, _opcode, _modrm) \
+{.name = _name, .operands = {_operands}, \
+   .rex = _rex, .opcode = {_opcode}, .modrm = _modrm}
 
-#define MAX_FORMATS	100
 #define TOTAL_FORMATS	(sizeof(formats) / sizeof(formats[0]))
-#define NO_REX	-1
 #define PLUS_REG	-2
-#define NO_MODRM	-1
+#define END		-1
 #define PROTECT(...) __VA_ARGS__
 //Format:
-//(<name>, PROTECT(<param types>, 0), <rex>, 
+//(<name>, PROTECT(<param types>, 0), PROTECT(<lprefixes>,-1), <rex>, 
 //PROTECT(<opcode(s)>, -1), <modrm>)
-mcode_fmt_t formats[MAX_FORMATS] = {
-   MAKE_OPCODE("movrrq", PROTECT("r64", "r64", 0), 0x48, 
-               PROTECT(0x8B, -1), 0xC0),
+mcode_fmt_t formats[] = {
+   MAKE_OPCODE("movrrq", PROTECT("r64", "r64", END), 0x48, 
+               PROTECT(0x8B, END), 0xC0),
 
-   MAKE_OPCODE("movril", PROTECT("r32", "i", 0), NO_REX,
-               PROTECT(0xB8, -1), PLUS_REG ),
+   MAKE_OPCODE("movril", PROTECT("r32", "i", END), END,
+               PROTECT(0xB8, END), PLUS_REG ),
 
-   MAKE_OPCODE("addrrl", PROTECT("r32", "r32", 0), NO_REX,
-               PROTECT(0x01, -1), 0xC0),
+   MAKE_OPCODE("addrrl", PROTECT("r32", "r32", END), END,
+               PROTECT(0x01, END), 0xC0),
 
-   MAKE_OPCODE("movrrl", PROTECT("r32", "r32", 0), NO_REX,
-               PROTECT(0x8B, -1), 0xC0),
+   MAKE_OPCODE("movrrl", PROTECT("r32", "r32", END), END,
+               PROTECT(0x8B, END), 0xC0),
 
-   MAKE_OPCODE("movriq", PROTECT("r64", "i", 0), 0x48,
-               PROTECT(0xB8, -1), PLUS_REG),
+   MAKE_OPCODE("movriq", PROTECT("r64", "i", END), 0x48,
+               PROTECT(0xB8, END), PLUS_REG),
 
-   MAKE_OPCODE("nop", PROTECT(0), NO_REX,
-               PROTECT(0x90, -1), NO_MODRM),
+   MAKE_OPCODE("nop", END, END, 
+               PROTECT(0x90, END), END),
 
-   MAKE_OPCODE("andrrq", PROTECT("r64", "r64", 0), 0x48,
-               PROTECT(0x21, -1), 0xC0),
+   MAKE_OPCODE("andrrq", PROTECT("r64", "r64", END), 0x48,
+               PROTECT(0x21, END), 0xC0),
 
-   MAKE_OPCODE("xorrrq", PROTECT("r64", "r64", 0), 0x48,
-               PROTECT(0x31, -1), 0xC0),
+   MAKE_OPCODE("xorrrq", PROTECT("r64", "r64", END), 0x48,
+               PROTECT(0x31, END), 0xC0),
 
-   MAKE_OPCODE("syscall", PROTECT(0), NO_REX,
-               PROTECT(0x0F, 0x05, -1), NO_MODRM),
+   MAKE_OPCODE("syscall", END, END, 
+               PROTECT(0x0F, 0x05, END), END),
+
+   MAKE_OPCODE("movrml", PROTECT("r32", "m32", END), END,
+               PROTECT(0x8B, END), 0x00),
 };
