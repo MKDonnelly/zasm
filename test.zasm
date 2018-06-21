@@ -1,2 +1,3 @@
-db test_data 1
-db test_again 2
+code
+movril eax, 60
+syscall

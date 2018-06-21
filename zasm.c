@@ -59,7 +59,8 @@ int memref_type(char *memref){
 }
 
 
-void encode_memref(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
+void encode_memref(buffer_t *output, parsed_asm_t *line, 
+                   mcode_fmt_t *fmt){
    //NOTE: I presume all instructions have the memory as the second 
    //operator.
    char *memref;
@@ -85,25 +86,25 @@ void encode_memref(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
 
    }
 
-   output->bytes[output->len] = modrm;
+   output->buffer[output->len] = modrm;
    output->len++;
 }
 
-void encode_prefixes(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
+void encode_prefixes(buffer_t *output, parsed_asm_t *line, 
+                     mcode_fmt_t *fmt){
    if( DEFAULT_OPSIZE16 && 
      (strcmp(fmt->operands[0], "m32") == 0 || 
       strcmp(fmt->operands[1], "m32") == 0 )){
       //Legacy prefix needed
-      output->bytes[output->len] = 0x67;
+      output->buffer[output->len] = 0x67;
       output->len++;
    }
 }
 
 //Encodes the rex prefix, if needed.
-void encode_rex(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
+void encode_rex(buffer_t *output, parsed_asm_t *line, 
+                mcode_fmt_t *fmt){
    if( fmt != 0 && fmt->rex != -1 ){
-      output->bytes[output->len] = (char)fmt->rex;
-
       //Add the two extra bits that extend the rex prefix
       //We only need the highest bit (bit 3) since the rex prefix
       //only includes that. So we and with 0b1000 and then shift right.
@@ -111,27 +112,29 @@ void encode_rex(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
       int op1_extension = (reg_to_num( line->operands[0] ) & 0b1000) >> 3;
       //source
       int op2_extension = (reg_to_num( line->operands[1] ) & 0b1000) >> 3;
-      output->bytes[output->len] |= (op2_extension << 3) | op1_extension;
+      output->buffer[output->len] = (char)fmt->rex | (op2_extension << 3) | op1_extension;
       output->len++;
    }
 }
 
 
-void encode_op(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
+void encode_op(buffer_t *output, parsed_asm_t *line, 
+               mcode_fmt_t *fmt){
    int opcode_byte = output->len;
    for(int i = 0; fmt->opcode[i] != -1; i++){
-      output->bytes[output->len] = fmt->opcode[i];
+      output->buffer[output->len] = (char)fmt->opcode[i];
       output->len++;
    }
 
    //Does not use modrm, to specify the registers, but uses
    //the last 3 bits of the opcode
    if( fmt->modrm == -2 ){
-      output->bytes[opcode_byte] |= reg_to_num( line->operands[0] );
+      output->buffer[opcode_byte] |= reg_to_num(line->operands[0]);
    }
 }
 
-void encode_modrm(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
+void encode_modrm(buffer_t *output, parsed_asm_t *line, 
+                  mcode_fmt_t *fmt){
    //Catch memory references; they are pretty complicated
    if( fmt->operands[0][0] == 'm' || fmt->operands[1][0] == 'm'){
       encode_memref(output, line, fmt);
@@ -142,125 +145,87 @@ void encode_modrm(mcode_t *output, asm_input_t *line, mcode_fmt_t *fmt){
       int op1 = reg_to_num(line->operands[0]) & 0b111;
       //source
       int op2 = reg_to_num(line->operands[1]) & 0b111;
-      output->bytes[output->len++] = ((char)fmt->modrm) | (op2 << 3) | op1;
+      output->buffer[output->len] = ((char)fmt->modrm) | (op2 << 3) | op1;
+      output->len++;
    }
 }
 
 
-
-
-void encode_immediate(mcode_t *output, asm_input_t *line, 
+void encode_immediate(buffer_t *output, parsed_asm_t *line, 
                       mcode_fmt_t *fmt){
    //Immediate MUST be second operand (i.e. we can't mov to an imm)
    if( fmt->operands[0] == 0 || fmt->operands[1] == 0 )
       return;
    if( strcmp( "i", fmt->operands[1] ) == 0 ){
       if( strcmp("r32", fmt->operands[0]) == 0 ){
-         uint32_t *ptr = &output->bytes[output->len];
+         uint32_t *ptr = (uint32_t*)&output->buffer[output->len];
          *ptr = atoi(line->operands[1]);
          output->len += 4;
      }else if( strcmp("r64", fmt->operands[0]) == 0){
-         uint64_t *ptr = &output->bytes[output->len];
+         uint64_t *ptr = (uint64_t*)&output->buffer[output->len];
          *ptr = atol(line->operands[1]);
          output->len += 8;
      }
    }
 }
 
+
 //Given a string (i.e. "mov eax, ebx") encode it.
-mcode_t *assemble_line(char *line){
-   asm_input_t input;
-
-   //Git the first part of the string: the mnemonic
-   char *mnemonic = strsep(&line, " ");
-   strcpy( input.mnemonic, mnemonic );
-   input.total_operands = 0;
- 
-   //first operand (destination)
-   char *first_op = strsep( &line, ",");
-   strip_chars(first_op, " \t");
-   if( first_op != NULL ){
-      strcpy(input.operands[0], first_op);
-      input.total_operands = 1;
-   }
-
-   //second operand (source)
-   char *second_op = strsep( &line, ",");
-   strip_chars(second_op, " \t");
-   if( second_op != NULL ){
-      strcpy( input.operands[1], second_op);
-      input.total_operands = 2;
-   }
-
-   //generate the actual assembly codes
-
+void assemble_line(parsed_asm_t *parsed, buffer_t *output_mcode){
    //get the format for the given mnemonic
-   mcode_fmt_t *fmt = search_format(input.mnemonic);
+   mcode_fmt_t *fmt = search_format(parsed->mnemonic);
 
-   //allocate space for the new machine code to generate
-   mcode_t *new_mcode = malloc(sizeof(mcode_t));
    if( fmt != NULL ){
-      new_mcode->len = 0;
-      encode_prefixes(new_mcode, &input, fmt);
-      encode_rex( new_mcode, &input, fmt );
-      encode_op( new_mcode, &input, fmt );
-      encode_modrm( new_mcode, &input, fmt ); 
-      encode_immediate( new_mcode, &input, fmt );
+      encode_prefixes(output_mcode, parsed, fmt);
+      encode_rex(output_mcode, parsed, fmt );
+      encode_op(output_mcode, parsed, fmt );
+      encode_modrm(output_mcode, parsed, fmt ); 
+      encode_immediate(output_mcode, parsed, fmt );
    }else{
       //Format was null. Was is not in the opcode table?
-      free(new_mcode);
-      printf("ERROR: Opcode not found: %s\n", input.mnemonic);
+      printf("ERROR: Opcode not found: %s\n", parsed->mnemonic);
    }
-
-   //return our new machine code chunk.
-   return new_mcode;
 }
 
-int process_file(FILE *input_file, char *output_mcode){
+
+/*int process_file(FILE *input_file, buffer_t *output_mcode){
    char *line = malloc(1024);
    size_t max = 1024;
 
    //We will want to return the size of the machine code we
    //placed in output_mcode. There is no other way for the caller
    //to know this.
-   int length = 0;
    int result = getline( &line, &max, input_file );
    line[result-1] = 0; //remove trailing newline
 
    while( result != -1 ){
-      mcode_t *mcode = assemble_line(line);
-      //copy the generated machine code out
-      for(int i = 0; i < mcode->len; i++, length++){
-         output_mcode[length] = mcode->bytes[i];
-      }
+      assemble_line(line, output_mcode);
+
       //get the next line, and remove the newline
       result = getline( &line, &max, input_file );
       line[result-1] = 0;
    }
+}*/
 
-   //Return number of bytes placed in output_mcode
-   return length;
-}
-
-
+/*
 void main(int argc, char **argv){
-   //FILE *ops = fopen("./opcode_table", "r");
-   //read_opcodes(ops);
+   buffer_t buffer;
+   buffer.buffer = malloc(200);
+   buffer.len = 0;
 
    //Open and assembly "test.asm"
    if( argc == 1 ){
       FILE *test = fopen("./test.asm", "r");
-      char *output_asm = malloc(1024);
-      int byte_length = process_file(test, output_asm);
+      process_file(test, &buffer);
    
-      for(int i = 0; i < byte_length; i++){
-         printf("%.2x ", output_asm[i] & 0xff);
+      for(int i = 0; i < buffer.len; i++){
+         printf("%.2x ", buffer.buffer[i] & 0xff);
       }
    }else{ 
       //Assembly CLI argument 1 
-      mcode_t *mcode = assemble_line(argv[1]);      
-      for(int i = 0; i < mcode->len; i++){
-         printf("%.2x ", mcode->bytes[i] & 0xff);
+      assemble_line(argv[1], &buffer);
+      for(int i = 0; i < buffer.len; i++){
+         printf("%.2x ", buffer.buffer[i] & 0xff);
       }
    }
-}
+}*/

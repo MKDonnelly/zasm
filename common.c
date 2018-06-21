@@ -1,7 +1,10 @@
 #include "common.h"
 #include <string.h>
 
+
 char *strip_chars(char *input, char *remove){
+   if( input == NULL )
+      return input;
    int non_ws = 0;
    int i = 0;
    while( input[i] != 0 ){
