@@ -10,15 +10,17 @@
 #include <fcntl.h>
 #include <string.h>
 
-#define ELF_ENTRY 0x400078 //+ 5
+#define START_VADDR	0x400000
+#define PROG_VADDR	(START_VADDR + sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr)) 
 
 void generate_elf_header(buffer_t *buf, uint64_t vaddr){
-   build_elfheader(buf);
-   build_pheader(buf, vaddr);
+   printf("%x\n", PROG_VADDR);
+   build_elfheader(buf, vaddr);
+   build_pheader(buf);
 }
 
 //Build standard header
-void build_elfheader(buffer_t *buf){
+void build_elfheader(buffer_t *buf, uint64_t code_offset){
 
    Elf64_Ehdr header;
 
@@ -52,7 +54,7 @@ void build_elfheader(buffer_t *buf){
    header.e_version = 1;
 
    //Set entry point vaddr
-   header.e_entry = ELF_ENTRY;
+   header.e_entry = PROG_VADDR + code_offset;
 
    //Set program header offset 
    header.e_phoff = 64;
@@ -86,7 +88,7 @@ void build_elfheader(buffer_t *buf){
    buf->len += sizeof(Elf64_Ehdr);
 }
 
-void build_pheader(buffer_t *buf, uint64_t vaddr){
+void build_pheader(buffer_t *buf){
    Elf64_Phdr header;
 
    //Set type to 1 (LOAD)
@@ -99,7 +101,7 @@ void build_pheader(buffer_t *buf, uint64_t vaddr){
    header.p_offset = 0;
 
    //Setup virtual address of segment
-   header.p_vaddr = 0x400000;
+   header.p_vaddr = START_VADDR;
 
    //physical address. not used
    header.p_paddr = 0;

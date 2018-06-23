@@ -4,10 +4,6 @@
 #include "common.h"
 #include "zasm.h"
 
-
-#define DATA_START_ADDR 0x400000
-int code_start_addr = DATA_START_ADDR;
-
 typedef struct stentry{
    int data_offset;
    char *refstring;
@@ -32,7 +28,7 @@ void assemble_data(char *line, buffer_t *output_buf){
    if( strcmp(asm_direct, "db") == 0 ){
       gsymtab.entries[gsymtab.total_entries].refstring = malloc(100);
       strcpy(gsymtab.entries[gsymtab.total_entries].refstring, name);
-      gsymtab.entries[gsymtab.total_entries].data_offset = output_buf->len;
+      gsymtab.entries[gsymtab.total_entries].data_offset = output_buf->len + 0x400078;
       gsymtab.total_entries++;
    
       output_buf->buffer[output_buf->len] = (char)atoi(arg);
@@ -40,16 +36,15 @@ void assemble_data(char *line, buffer_t *output_buf){
    }
 }
 
-void encode_datarefs(parsed_asm_t *line, symtab_t *symtab){
-   for(int i = 0; i < symtab->total_entries; i++){
-      if( strcmp(line->operands[0], symtab->entries[i].refstring) == 0 ){
-         char buffer[30];
-         sprintf(buffer, "%d", symtab->entries[i].data_offset);
-         substr_replace(line->operands[0], symtab->entries[i].refstring, buffer);
+void encode_datarefs(parsed_asm_t *line){
+   for(int i = 0; i < gsymtab.total_entries; i++){
+      if( strcmp(line->operands[0], gsymtab.entries[i].refstring) == 0 )
+         sprintf(line->operands[0], "%d", gsymtab.entries[i].data_offset);
+
+      if(strcmp(line->operands[1], gsymtab.entries[i].refstring) == 0 ){
+         sprintf(line->operands[1], "%d", gsymtab.entries[i].data_offset);
       }
-      if(strcmp(line->operands[1], symtab->entries[i].refstring) == 0 ){
-         sprintf(line->operands[1], "%d", symtab->entries[i].data_offset);
-      }
+      
    }
 }
 
@@ -93,42 +88,29 @@ void main(){
 
    int i = 0;
    while( result != -1 && strncmp(buf, "code", 4) != 0 ){
-      printf("Buffer is %s\n", buf);
       assemble_data(buf, &mcode);
       result = getline(&buf, &max, input);
       i++;
    }
 
-   //Increment past the start of the code
-   code_start_addr += mcode.len;
-   printf("Start: %x\n", code_start_addr);
+   //Increment past the start of the data to get to the code
+   int code_offset = mcode.len;
 
    result = getline(&buf, &max, input);
    while( result != -1 ){
-      printf("Code: %s\n", buf);
-      assemble_line(parse_line(buf), &mcode);
+      parsed_asm_t *l = parse_line(buf);
+      encode_datarefs(l);
+      assemble_line(l, &mcode);
       result = getline(&buf, &max, input);
-   }
-
-   printf("Assembly:\n");
-   for(int i = 0; i < mcode.len; i++){
-      printf("%.2x ", mcode.buffer[i] & 0xff);
    }
 
    buffer_t hdr;
    hdr.len = 0;
    hdr.buffer = malloc(900);
-   generate_elf_header(&hdr, code_start_addr);
-   printf("Header:\n");
-   for(int i = 0; i < hdr.len; i++){
-      printf("%.2x ", hdr.buffer[i] & 0xff);
-   }
+   generate_elf_header(&hdr, code_offset);
 
+   //Write final binary
    FILE *output = fopen("output.elf", "w");
-   if( output == NULL )
-      printf("output");
    fwrite(hdr.buffer, sizeof(char), (size_t)hdr.len, output);
    fwrite(mcode.buffer, sizeof(char), (size_t)mcode.len, output);
-
-   //printf("%s %s, %s\n", p->mnemonic, p->operands[0], p->operands[1]);
 }

@@ -1,3 +1,11 @@
+db test 90
+db a 90
+db b 90
 code
+movriq rax, 1
+movriq rdi, 1
+movriq rsi, test
+movriq rdx, 3
+syscall
 movril eax, 60
 syscall
