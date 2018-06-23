@@ -1,5 +1,12 @@
 #pragma once
 
+//Default operand size when making memory references.
+#define DEFAULT_OPSIZE16        1
+
+//The legacy prefix needed when doing 32-bit mem references
+//when the default operand size is 16 bits
+#define LPREFIX_MEM_OVERRIDE	0x67
+
 //Uses to hold the template for forming
 //an instruction of this kind
 typedef struct{

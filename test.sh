@@ -1,6 +1,6 @@
 #!/bin/bash
 
-executable=./a.out
+executable=./zasm
 
 test_encode(){
    if [[ "$($executable "$1")" != "$2" ]]; then

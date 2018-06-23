@@ -1,7 +1,6 @@
 #include "common.h"
 #include <string.h>
 
-
 char *strip_chars(char *input, char *remove){
    if( input == NULL )
       return input;
@@ -42,4 +41,3 @@ void substr_replace(char *line, char *search_for, char *replace_with){
    temp[ti] = 0;
    strcpy( line, temp );
 }
-

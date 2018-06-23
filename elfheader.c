@@ -1,20 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "common.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-#include "elf64.h"
-#include <unistd.h>
-#include <sys/types.h>
-#include <fcntl.h>
 #include <string.h>
+#include "common.h"
+#include "elf64.h"
+#include "elfheader.h"
 
 #define START_VADDR	0x400000
 #define PROG_VADDR	(START_VADDR + sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr)) 
 
 void generate_elf_header(buffer_t *buf, uint64_t vaddr){
-   printf("%x\n", PROG_VADDR);
    build_elfheader(buf, vaddr);
    build_pheader(buf);
 }

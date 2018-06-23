@@ -1,231 +1,117 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
-#include "zasm.h"
 #include "common.h"
-#include "opcode_table.h"
+#include "assemble.h"
+#include "elfheader.h"
 
-//Given the name of a register (i.e. "rax") convert it
-//into its number. The number is used when referencing the
-//register in machine code.
-char reg_to_num(char *reg){
-   if( strcmp(reg, "rax") == 0 || strcmp(reg, "eax") == 0)
-      return 0b0000;
-   if( strcmp(reg, "rbx") == 0 || strcmp(reg, "ebx") == 0)
-      return 0b0011;
-   if( strcmp(reg, "rcx") == 0 || strcmp(reg, "ecx") == 0)
-      return 0b0001;
-   if( strcmp(reg, "rdx") == 0 || strcmp(reg, "edx") == 0)
-      return 0b0010;
-   if( strcmp(reg, "rsi") == 0 || strcmp(reg, "esi") == 0)
-      return 0b0110;
-   if( strcmp(reg, "rdi") == 0 || strcmp(reg, "edi") == 0)
-      return 0b0111;
-}
+typedef struct stentry{
+   int data_offset;
+   char *refstring;
+}stentry_t;
 
-//Search for the format of a machine code given 
-//the mnemonic.
-mcode_fmt_t *search_format(char *mnemonic){
-   for(int i = 0; i < TOTAL_FORMATS; i++){
-      if( strcmp( formats[i].name, mnemonic ) == 0 )
-            return &formats[i];
-   }
-   return NULL;
-}
+typedef struct symtab{
+   stentry_t entries[100];
+   int total_entries;
+}symtab_t;
 
-//Determine the type of memory reference being made
-//This is primarily done by finding the number after
-//the closing brace, if it exists. This differentiates
-//the following three cases.
-// 1 - [<reg>]
-// 2 - [<reg>]+disp8
-// 3 - [<reg>]+disp32
-int memref_type(char *memref){
-   if( strstr(memref, "+") == NULL ){
-      //No plus, so it must be 1
-      return 0b00; //Mod == 00
-   }else{
-      char *number_start = strstr(memref, "+");
-      number_start++; //skip over "+"
-      int number = atoi(number_start);
-      if( number < 255 ){
-         //number can be represented as disp8
-         return 0b01;
-      }else{
-         return 0b10;
-      }
+symtab_t gsymtab;
+
+void assemble_data(char *line, buffer_t *output_buf){
+   //Separate line
+   char *asm_direct = strsep(&line, " ");
+
+   char *name = strsep(&line, " ");
+
+   char *arg = strsep(&line, " ");
+   strip_chars(arg, " ");
+
+   if( strcmp(asm_direct, "db") == 0 ){
+      gsymtab.entries[gsymtab.total_entries].refstring = malloc(strlen(name)+1);
+      strcpy(gsymtab.entries[gsymtab.total_entries].refstring, name);
+      gsymtab.entries[gsymtab.total_entries].data_offset = output_buf->len + 0x400078;
+      gsymtab.total_entries++;
+  
+      buffer_append(output_buf, (char)atoi(arg)); 
    }
 }
 
+void encode_datarefs(parsed_asm_t *line){
+   for(int i = 0; i < gsymtab.total_entries; i++){
+      if( strcmp(line->operands[0], gsymtab.entries[i].refstring) == 0 )
+         sprintf(line->operands[0], "%d", gsymtab.entries[i].data_offset);
 
-void encode_memref(buffer_t *output, parsed_asm_t *line, 
-                   mcode_fmt_t *fmt){
-   //NOTE: I presume all instructions have the memory as the second 
-   //operator.
-   char *memref;
-   char modrm = fmt->modrm;
-   
-   if( fmt->operands[1][0] == 'm'){
-      memref = line->operands[1];
-   }else{
-       return;
+      if(strcmp(line->operands[1], gsymtab.entries[i].refstring) == 0 )
+         sprintf(line->operands[1], "%d", gsymtab.entries[i].data_offset);
    }
+}
 
-   printf("Memory reference: %s\n", memref);
+parsed_asm_t *parse_line(char *line){
+   parsed_asm_t *input = malloc(sizeof(parsed_asm_t));
+   line = strip_chars(line, "\n");
 
-   int mod = memref_type(memref);
-   char *reg = strip_chars(memref, "[]");
+   //Git the first part of the string: the mnemonic
+   char *mnemonic = strsep(&line, " ");
+   strcpy( input->mnemonic, mnemonic );
+   input->total_operands = 0;
  
-   if( mod == 0 ){
-      modrm |= mod << 6 | ((reg_to_num(line->operands[0]) & 0b111) << 3) 
-               | (reg_to_num(reg) & 0b111);
-   }else if( mod == 0b01 ){
-
-   }else if( mod == 0b10 ){
-
+   //first operand (destination)
+   char *first_op = strsep( &line, ",");
+   strip_chars(first_op, " \t");
+   if( first_op != NULL ){
+      strcpy(input->operands[0], first_op);
+      input->total_operands = 1;
    }
 
-   output->buffer[output->len] = modrm;
-   output->len++;
-}
-
-void encode_prefixes(buffer_t *output, parsed_asm_t *line, 
-                     mcode_fmt_t *fmt){
-   if( DEFAULT_OPSIZE16 && 
-     (strcmp(fmt->operands[0], "m32") == 0 || 
-      strcmp(fmt->operands[1], "m32") == 0 )){
-      //Legacy prefix needed
-      output->buffer[output->len] = 0x67;
-      output->len++;
+   //second operand (source)
+   char *second_op = strsep( &line, ",");
+   strip_chars(second_op, " \t");
+   if( second_op != NULL ){
+      strcpy( input->operands[1], second_op);
+      input->total_operands = 2;
    }
-}
 
-//Encodes the rex prefix, if needed.
-void encode_rex(buffer_t *output, parsed_asm_t *line, 
-                mcode_fmt_t *fmt){
-   if( fmt != 0 && fmt->rex != -1 ){
-      //Add the two extra bits that extend the rex prefix
-      //We only need the highest bit (bit 3) since the rex prefix
-      //only includes that. So we and with 0b1000 and then shift right.
-      //destination
-      int op1_extension = (reg_to_num( line->operands[0] ) & 0b1000) >> 3;
-      //source
-      int op2_extension = (reg_to_num( line->operands[1] ) & 0b1000) >> 3;
-      output->buffer[output->len] = (char)fmt->rex | (op2_extension << 3) | op1_extension;
-      output->len++;
-   }
+   return input;
 }
 
 
-void encode_op(buffer_t *output, parsed_asm_t *line, 
-               mcode_fmt_t *fmt){
-   int opcode_byte = output->len;
-   for(int i = 0; fmt->opcode[i] != -1; i++){
-      output->buffer[output->len] = (char)fmt->opcode[i];
-      output->len++;
-   }
-
-   //Does not use modrm, to specify the registers, but uses
-   //the last 3 bits of the opcode
-   if( fmt->modrm == -2 ){
-      output->buffer[opcode_byte] |= reg_to_num(line->operands[0]);
-   }
-}
-
-void encode_modrm(buffer_t *output, parsed_asm_t *line, 
-                  mcode_fmt_t *fmt){
-   //Catch memory references; they are pretty complicated
-   if( fmt->operands[0][0] == 'm' || fmt->operands[1][0] == 'm'){
-      encode_memref(output, line, fmt);
-   }else if( fmt->modrm >= 0 ){
-      //reg_to_num returns a 4 bit value (the upper bit is used by
-      //the rex prefix, if required). we only need the lower 3.
-      //destination
-      int op1 = reg_to_num(line->operands[0]) & 0b111;
-      //source
-      int op2 = reg_to_num(line->operands[1]) & 0b111;
-      output->buffer[output->len] = ((char)fmt->modrm) | (op2 << 3) | op1;
-      output->len++;
-   }
-}
-
-
-void encode_immediate(buffer_t *output, parsed_asm_t *line, 
-                      mcode_fmt_t *fmt){
-   //Immediate MUST be second operand (i.e. we can't mov to an imm)
-   if( fmt->operands[0] == 0 || fmt->operands[1] == 0 )
-      return;
-   if( strcmp( "i", fmt->operands[1] ) == 0 ){
-      if( strcmp("r32", fmt->operands[0]) == 0 ){
-         uint32_t *ptr = (uint32_t*)&output->buffer[output->len];
-         *ptr = atoi(line->operands[1]);
-         output->len += 4;
-     }else if( strcmp("r64", fmt->operands[0]) == 0){
-         uint64_t *ptr = (uint64_t*)&output->buffer[output->len];
-         *ptr = atol(line->operands[1]);
-         output->len += 8;
-     }
-   }
-}
-
-
-//Given a string (i.e. "mov eax, ebx") encode it.
-void assemble_line(parsed_asm_t *parsed, buffer_t *output_mcode){
-   //get the format for the given mnemonic
-   mcode_fmt_t *fmt = search_format(parsed->mnemonic);
-
-   if( fmt != NULL ){
-      encode_prefixes(output_mcode, parsed, fmt);
-      encode_rex(output_mcode, parsed, fmt );
-      encode_op(output_mcode, parsed, fmt );
-      encode_modrm(output_mcode, parsed, fmt ); 
-      encode_immediate(output_mcode, parsed, fmt );
-   }else{
-      //Format was null. Was is not in the opcode table?
-      printf("ERROR: Opcode not found: %s\n", parsed->mnemonic);
-   }
-}
-
-
-/*int process_file(FILE *input_file, buffer_t *output_mcode){
-   char *line = malloc(1024);
-   size_t max = 1024;
-
-   //We will want to return the size of the machine code we
-   //placed in output_mcode. There is no other way for the caller
-   //to know this.
-   int result = getline( &line, &max, input_file );
-   line[result-1] = 0; //remove trailing newline
-
-   while( result != -1 ){
-      assemble_line(line, output_mcode);
-
-      //get the next line, and remove the newline
-      result = getline( &line, &max, input_file );
-      line[result-1] = 0;
-   }
-}*/
-
-/*
 void main(int argc, char **argv){
-   buffer_t buffer;
-   buffer.buffer = malloc(200);
-   buffer.len = 0;
+   FILE *input;
 
-   //Open and assembly "test.asm"
-   if( argc == 1 ){
-      FILE *test = fopen("./test.asm", "r");
-      process_file(test, &buffer);
-   
-      for(int i = 0; i < buffer.len; i++){
-         printf("%.2x ", buffer.buffer[i] & 0xff);
-      }
-   }else{ 
-      //Assembly CLI argument 1 
-      assemble_line(argv[1], &buffer);
-      for(int i = 0; i < buffer.len; i++){
-         printf("%.2x ", buffer.buffer[i] & 0xff);
-      }
+   if( argc > 1 ){
+      input = fopen(argv[1], "r");
+   }else{
+      printf("Usage: %s <file>.asm", argv[0]);
    }
-}*/
+
+   size_t max = 1024;
+   char *buf = malloc(max);
+   int result = getline( &buf, &max, input);
+   buffer_t *mcode = create_buffer(200);
+
+   int i = 0;
+   while( result != -1 && strncmp(buf, "code", 4) != 0 ){
+      assemble_data(buf, mcode);
+      result = getline(&buf, &max, input);
+      i++;
+   }
+
+   //Increment past the start of the data to get to the code
+   int code_offset = mcode->len;
+
+   result = getline(&buf, &max, input);
+   while( result != -1 ){
+      parsed_asm_t *l = parse_line(buf);
+      encode_datarefs(l);
+      assemble_line(l, mcode);
+      result = getline(&buf, &max, input);
+   }
+
+   buffer_t *hdr = create_buffer(900); 
+   generate_elf_header(hdr, code_offset);
+
+   //Write final binary
+   FILE *output = fopen("output.elf", "w");
+   fwrite(hdr->buffer, sizeof(char), (size_t)hdr->len, output);
+   fwrite(mcode->buffer, sizeof(char), (size_t)mcode->len, output);
+}
