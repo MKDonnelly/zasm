@@ -10,7 +10,10 @@
 #define MNEMONIC_MAX_LEN        20
 #define MAX_OPERANDS            2
 #define OPERANDS_MAX_LEN        20
+#define TYPE_DATA	1
+#define TYPE_CODE	2
 typedef struct{
+   int type;
    char mnemonic[MNEMONIC_MAX_LEN];
    int total_operands;
    char operands[MAX_OPERANDS][OPERANDS_MAX_LEN];

@@ -5,7 +5,8 @@ c_sources :=	\
 	./common.c	\
 	./elfheader.c	\
 	./zasm.c	\
-	./assemble.c
+	./assemble.c	\
+	./lexer.c
 
 c_objs = $(c_sources:%.c=%.o)
 

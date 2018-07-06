@@ -1,6 +1,7 @@
 #include "common.h"
 #include <string.h>
 
+//TODO re-work to only strip a single char
 char *strip_chars(char *input, char *remove){
    if( input == NULL )
       return input;

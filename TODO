@@ -1,5 +1,0 @@
-Get SIB working for memory accesses
-Write pre-processor to turn "mov rax, rbx" into "movrrq rax, rbx"
-Add in support for a data and text section
-Improve ELF generation support
-Use header for modrm, sib, rex
