@@ -1,4 +1,3 @@
-
 output_binary := zasm
 
 c_sources :=	\
@@ -6,11 +5,12 @@ c_sources :=	\
 	./elfheader.c	\
 	./zasm.c	\
 	./assemble.c	\
-	./lexer.c
+	./lexer.c	\
+	./opcode_table.c
 
 c_objs = $(c_sources:%.c=%.o)
 
-CFLAGS := 
+CFLAGS := -g
 CC := gcc
 LD := ld
 

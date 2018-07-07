@@ -17,11 +17,11 @@ typedef struct symtab{
 
 symtab_t gsymtab;
 
-void assemble_data(char *line, buffer_t *output_buf){
+void assemble_data(asmline_t *line, buffer_t *output_buf){
    //Separate line
-   char *asm_direct = strsep(&line, " ");
+   char *asm_direct = asmline_get_mnemonic(line);
 
-   char *name = strsep(&line, " ");
+   char *name = asmline_get_op(line, 0);
 
    if( strcmp(asm_direct, "db") == 0 ){
       gsymtab.entries[gsymtab.total_entries].refstring = 
@@ -32,53 +32,24 @@ void assemble_data(char *line, buffer_t *output_buf){
       gsymtab.total_entries++;
 
       //place data
-      char *each_arg = strsep(&line, ",");
-      while(each_arg != NULL){
-         buffer_append(output_buf, (char)atoi(each_arg));
-         each_arg = strsep(&line, ",");
-      }
+      char *data = asmline_get_op(line, 1);
+      data++;
+      buffer_append(output_buf, (char)atoi(data));
    }
 }
 
-void encode_datarefs(parsed_asm_t *line){
+void encode_datarefs(asmline_t *line){
    for(int i = 0; i < gsymtab.total_entries; i++){
-      if( strcmp(line->operands[0], gsymtab.entries[i].refstring) == 0 )
-         sprintf(line->operands[0], "%d", gsymtab.entries[i].data_offset);
-
-      if(strcmp(line->operands[1], gsymtab.entries[i].refstring) == 0 )
-         sprintf(line->operands[1], "%d", gsymtab.entries[i].data_offset);
+      for(int j = 0; j < line->total_operands; j++)
+         if( strcmp(asmline_get_op(line, j), 
+             gsymtab.entries[i].refstring) == 0 )
+            sprintf(asmline_get_op(line, j), "%d", 
+                  gsymtab.entries[i].data_offset);
    }
 }
 
-parsed_asm_t *parse_line(char *line){
-   parsed_asm_t *input = malloc(sizeof(parsed_asm_t));
-   line = strip_chars(line, "\n");
-
-   //Git the first part of the string: the mnemonic
-   char *mnemonic = strsep(&line, " ");
-   mnemonic = strip_chars(mnemonic, " ");
-   strcpy( input->mnemonic, mnemonic );
-   input->total_operands = 0;
- 
-   //first operand (destination)
-   char *first_op = strsep( &line, ",");
-   strip_chars(first_op, " \t");
-   if( first_op != NULL ){
-      strcpy(input->operands[0], first_op);
-      input->total_operands = 1;
-   }
-
-   //second operand (source)
-   char *second_op = strsep( &line, ",");
-   strip_chars(second_op, " \t");
-   if( second_op != NULL ){
-      strcpy( input->operands[1], second_op);
-      input->total_operands = 2;
-   }
-
-   return input;
+void process_line(asmline_t *line, buffer_t *buf){
 }
-
 
 void main(int argc, char **argv){
    FILE *input;
@@ -94,80 +65,28 @@ void main(int argc, char **argv){
    char *buf = malloc(max);
    int result = getline( &buf, &max, input);
    buffer_t *mcode = create_buffer(200);
+   buffer_t *data = create_buffer(200);
 
    while( result != -1 ){
-      parsed_asm_t *p = parse_line(buf);
-      encode_line(p, mcode);
+      int t;
+      token_t *toks = lexer(buf, &t);
+      asmline_t *l = parse_line(&toks);
+   
+      if( l->linetype == LT_CODE ){
+         encode_datarefs(l);
+         assemble_line(l, mcode);
+      }else if( l->linetype == LT_DATA ){
+         assemble_data(l, data);
+      }
+
       result = getline(&buf, &max, input);
    }
 
-/*
-   int i = 0;
-   while( result != -1 && strncmp(buf, "code", 4) != 0 ){
-      assemble_data(buf, mcode);
-      result = getline(&buf, &max, input);
-      i++;
-   }
+   buffer_t *hdr = create_buffer(900);
+   generate_elf_header(hdr, data->len);
 
-   //Increment past the start of the data to get to the code
-   int code_offset = mcode->len;
-
-   result = getline(&buf, &max, input);
-   while( result != -1 ){
-      parsed_asm_t *l = parse_line(buf);
-      encode_datarefs(l);
-      assemble_line(l, mcode);
-      result = getline(&buf, &max, input);
-   }
-
-   buffer_t *hdr = create_buffer(900); 
-   generate_elf_header(hdr, code_offset);
-
-   //Write final binary
    FILE *output = fopen("output.elf", "w");
    fwrite(hdr->buffer, sizeof(char), (size_t)hdr->len, output);
-   fwrite(mcode->buffer, sizeof(char), (size_t)mcode->len, output);*/
-}
-
-/*
-void main(int argc, char **argv){
-   FILE *input;
-
-   if( argc > 1 ){
-      input = fopen(argv[1], "r");
-   }else{
-      printf("Usage: %s <file>\n", argv[0]);
-      exit(1);
-   }
-
-   size_t max = 1024;
-   char *buf = malloc(max);
-   int result = getline( &buf, &max, input);
-   buffer_t *mcode = create_buffer(200);
-
-   int i = 0;
-   while( result != -1 && strncmp(buf, "code", 4) != 0 ){
-      assemble_data(buf, mcode);
-      result = getline(&buf, &max, input);
-      i++;
-   }
-
-   //Increment past the start of the data to get to the code
-   int code_offset = mcode->len;
-
-   result = getline(&buf, &max, input);
-   while( result != -1 ){
-      parsed_asm_t *l = parse_line(buf);
-      encode_datarefs(l);
-      assemble_line(l, mcode);
-      result = getline(&buf, &max, input);
-   }
-
-   buffer_t *hdr = create_buffer(900); 
-   generate_elf_header(hdr, code_offset);
-
-   //Write final binary
-   FILE *output = fopen("output.elf", "w");
-   fwrite(hdr->buffer, sizeof(char), (size_t)hdr->len, output);
+   fwrite(data->buffer, sizeof(char), (size_t)data->len, output);
    fwrite(mcode->buffer, sizeof(char), (size_t)mcode->len, output);
-}*/
+}

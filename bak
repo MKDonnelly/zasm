@@ -1,8 +1,8 @@
 db $test, !64
 movriq #rax, !1
 movriq #rdi, !1
-movriq #rsi, !4194424 
-movriq #rdx, !1
+movriq #rsi, $test
+movriq #rdx, !3
 syscall
 movril #eax, !60
 syscall
