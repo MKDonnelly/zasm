@@ -43,5 +43,7 @@ static inline int asmline_get_optype(asmline_t *line, int op){
    return line->operands[op]->type;
 }
 
+//When uncommented, these make the program segfault.
+//Why?
 token_t *lexer(char *input, int *total);
 asmline_t *parse_line(token_t **tokens);

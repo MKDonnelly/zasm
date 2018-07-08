@@ -1,7 +1,7 @@
 db $test, !64
 movriq #rax, !1
 movriq #rdi, !1
-movriq #rsi, !4194424 
+movriq #rsi, $test
 movriq #rdx, !1
 syscall
 movril #eax, !60

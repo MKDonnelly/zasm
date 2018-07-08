@@ -42,9 +42,10 @@ void encode_datarefs(asmline_t *line){
    for(int i = 0; i < gsymtab.total_entries; i++){
       for(int j = 0; j < line->total_operands; j++)
          if( strcmp(asmline_get_op(line, j), 
-             gsymtab.entries[i].refstring) == 0 )
-            sprintf(asmline_get_op(line, j), "%d", 
+             gsymtab.entries[i].refstring) == 0 ){
+            sprintf(asmline_get_op(line, j), "!%d", 
                   gsymtab.entries[i].data_offset);
+         }
    }
 }
 
@@ -70,7 +71,7 @@ void main(int argc, char **argv){
    while( result != -1 ){
       int t;
       token_t *toks = lexer(buf, &t);
-      asmline_t *l = parse_line(&toks);
+      asmline_t *l = (asmline_t*)parse_line(&toks);
    
       if( l->linetype == LT_CODE ){
          encode_datarefs(l);
