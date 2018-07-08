@@ -1,8 +1,12 @@
-db $test, !64
-movriq #rax, !1
-movriq #rdi, !1
-movriq #rsi, $test
-movriq #rdx, !1
-syscall
-movril #eax, !60
-syscall
+db $test, !64, !65
+ds $mystr, %hello
+
+dl $here
+   movriq #rax, !1
+   movriq #rdi, !1
+   movriq #rsi, $mystr
+   movriq #rdx, !5
+   syscall
+
+   movril #eax, !60
+   syscall

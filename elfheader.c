@@ -91,7 +91,9 @@ void build_pheader(buffer_t *buf){
    //Set flags to 7 (TODO why?)
    header.p_flags = 7;
 
-   //Set offset within file (TODO why 0? this was a problem with Zeros)
+   //Set offset within file 
+   //THIS IS THE OFFSET ADDED TO THE ENTRY ADDRESS!
+   //If this is zero, we can directly jump to the entry.
    header.p_offset = 0;
 
    //Setup virtual address of segment

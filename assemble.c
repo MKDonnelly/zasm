@@ -169,6 +169,11 @@ void encode_immediate(buffer_t *output, asmline_t *line,
 
 //Given a string (i.e. "mov eax, ebx") encode it.
 void assemble_line(asmline_t *parsed, buffer_t *output_mcode){
+   //we may be passed a blank line.
+   if( parsed->total_operands == 0 && 
+       parsed->mnemonic == NULL )
+      return;
+
    //get the format for the given mnemonic
    mcode_fmt_t *fmt = search_format(asmline_get_mnemonic(parsed));
 

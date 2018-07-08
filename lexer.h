@@ -1,13 +1,14 @@
 #pragma once
 
 enum { TYPE_MNEMONIC, TYPE_REGISTER, TYPE_MEMORY, TYPE_IMM, TYPE_COMMA,
-       TYPE_PRAGMA, TYPE_SYNOP, TYPE_VAR, TYPE_NL };
+       TYPE_PRAGMA, TYPE_SYNOP, TYPE_VAR, TYPE_NL, TYPE_STR, TYPE_LABEL };
 
 #define is_operand( token ) \
      ( (token).type == TYPE_REGISTER ||  \
        (token).type == TYPE_MEMORY   ||  \
        (token).type == TYPE_IMM      ||  \
-       (token).type == TYPE_VAR )
+       (token).type == TYPE_VAR      ||  \
+       (token).type == TYPE_STR )
 
 typedef struct{
    int type;
@@ -36,11 +37,17 @@ static inline char *asmline_get_mnemonic(asmline_t *line){
 }
 
 static inline char *asmline_get_op(asmline_t *line, int op){
-   return line->operands[op]->value;
+   if( line->total_operands > op )
+      return line->operands[op]->value;
+   else
+      return NULL;
 }
 
 static inline int asmline_get_optype(asmline_t *line, int op){
-   return line->operands[op]->type;
+   if( line->total_operands > op )
+      return line->operands[op]->type;
+   else
+      return -1;
 }
 
 //When uncommented, these make the program segfault.

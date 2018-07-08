@@ -14,6 +14,10 @@ int type_of(char *str){
 
    if( strcmp(str, "db") == 0 )
       return TYPE_SYNOP;
+   if( strcmp(str, "ds") == 0 )
+      return TYPE_SYNOP;
+   if( strcmp(str, "dl") == 0 )
+      return TYPE_LABEL;
 
    if( strstr(str, "#") != NULL )
       return TYPE_REGISTER;
@@ -23,10 +27,16 @@ int type_of(char *str){
       return TYPE_IMM;
    if( strstr(str, "$") != NULL )
       return TYPE_VAR;
+   if( strstr(str, "%") != NULL )
+      return TYPE_STR;
+   if( strstr(str, "^") != NULL )
+      return TYPE_LABEL;
 
    if( strcmp(str, "section_code") == 0 )
       return TYPE_PRAGMA;
 
+   if( strcmp(str, "\n") == 0 )
+      return TYPE_NL;
 
    return -1;
 }
@@ -49,9 +59,11 @@ token_t *lexer(char *input, int *total){
       char delim = input[i];
       input[i] = '\0';
 
-      tokens[tokens_index].type = type_of(tok);
-      tokens[tokens_index].value = tok;
-      tokens_index++;
+      if( tok[0] != '\0' ){
+         tokens[tokens_index].type = type_of(tok);
+         tokens[tokens_index].value = tok;
+         tokens_index++;
+      }
 
       if( delim == ',' ){
          tokens[tokens_index].type = TYPE_COMMA;
@@ -87,6 +99,9 @@ asmline_t *parse_line(token_t **tokens){
       }else if( (*tokens)->type == TYPE_SYNOP ){
          parsed->mnemonic = *tokens;
          parsed->linetype = LT_DATA;
+      }else if( (*tokens)->type == TYPE_LABEL ){
+         parsed->mnemonic = *tokens;
+         parsed->linetype = LT_DATA;
       }else if( is_operand(**tokens) ){
          parsed->operands[parsed->total_operands] = *tokens;
          parsed->total_operands++;
@@ -103,12 +118,3 @@ asmline_t *parse_line(token_t **tokens){
    return parsed;
 }
 
-/*void main(){
-   int t;
-   char line[] = "movril #rax, #rcx\n \
-                  andrrq $test, !123 \n";
-   token_t *ret = lexer(line, &t);
-   
-   asmline_t *p = parse_line(&ret);
-   asmline_t *s = parse_line(&ret);
-}*/

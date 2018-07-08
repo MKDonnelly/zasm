@@ -30,6 +30,7 @@ mcode_fmt_t formats[] = {
 
    MAKE_OPCODE("movrml", PROTECT("r32", "m32", END), END,
                PROTECT(0x8B, END), 0x00),
+
 };
 
 int total_formats(){

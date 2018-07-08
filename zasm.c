@@ -32,9 +32,36 @@ void assemble_data(asmline_t *line, buffer_t *output_buf){
       gsymtab.total_entries++;
 
       //place data
-      char *data = asmline_get_op(line, 1);
-      data++;
-      buffer_append(output_buf, (char)atoi(data));
+      int i = 1;
+      char *data;
+      while( (data = asmline_get_op(line, i)) != NULL ){
+         data++; //Move over "!"
+         buffer_append(output_buf, (char)atoi(data));
+         i++;
+      }
+   }else if( strcmp(asm_direct, "ds") == 0 ){
+      gsymtab.entries[gsymtab.total_entries].refstring = 
+                                                 malloc(strlen(name)+1);
+      strcpy(gsymtab.entries[gsymtab.total_entries].refstring, name);
+      gsymtab.entries[gsymtab.total_entries].data_offset = 
+                                             output_buf->len + 0x400078;
+      gsymtab.total_entries++;
+
+      //place string
+      char *str = asmline_get_op(line, 1);
+      str++;
+      int i = 0;
+      while( str[i] != 0 ){
+         buffer_append(output_buf, str[i]);
+         i++;
+      }
+   }else if( strcmp(asm_direct, "dl") == 0 ){
+      gsymtab.entries[gsymtab.total_entries].refstring = 
+                                                 malloc(strlen(name)+1);
+      strcpy(gsymtab.entries[gsymtab.total_entries].refstring, name);
+      gsymtab.entries[gsymtab.total_entries].data_offset = 
+                                             output_buf->len + 0x400078;
+      gsymtab.total_entries++;
    }
 }
 
@@ -47,9 +74,6 @@ void encode_datarefs(asmline_t *line){
                   gsymtab.entries[i].data_offset);
          }
    }
-}
-
-void process_line(asmline_t *line, buffer_t *buf){
 }
 
 void main(int argc, char **argv){
