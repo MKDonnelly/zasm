@@ -1,12 +1,15 @@
-db $test, !64, !65
-ds $mystr, %hello
+db test, !64, !65
+db mystr, "hello, world"
 
-dl $here
+dl here
    movriq #rax, !1
    movriq #rdi, !1
-   movriq #rsi, $mystr
+   movriq #rsi, mystr
    movriq #rdx, !5
    syscall
 
    movril #eax, !60
    syscall
+
+TYPE_SYNOP TYPE_IDENTIFIER TYPE_LITERAL TYPE_LITERAL
+

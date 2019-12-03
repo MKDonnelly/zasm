@@ -1,0 +1,5 @@
+
+<assembly_instr> = <opcode> <operand>* | <label>
+<opcode> = mov | add | sub ...
+<label> = [a-zA-Z_].*:
+
